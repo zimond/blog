@@ -1,0 +1,17 @@
+<section id='main'>
+  <div class='page-title'><%- page.title %></div>
+  <header>Posted at <%= date(page.date, config.date_format) %>, tagged as: 
+    <% if (page.tags && page.tags.length){ %>
+      <%- list_tags(page.tags, {
+        show_count: false,
+        class: 'article-tag-link',
+        style: '',
+        seperator: ', '
+      }) %>
+    <% } %>.
+    <a href='/blog'>Go Back</a>
+  </header>
+  <div class='post-detail'>
+    <%- page.content %>
+  </div>
+</section>

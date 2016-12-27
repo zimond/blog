@@ -1,0 +1,11 @@
+<header>
+  <div class='page-title'>Archive List</div>
+</header>
+<ul class='toc'>
+  <% page.posts.each(function(post){ %>
+    <li>
+      <a href="<%- url_for(post.path) %>"><%= post.title %></a>
+      <span class='list-post-time'><%= date(post.date, config.date_format) %></span>
+    </li>
+  <% }) %>
+</ul>

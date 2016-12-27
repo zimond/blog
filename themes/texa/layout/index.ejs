@@ -1,0 +1,11 @@
+<section id="main">
+  <header class="intro">Hey, this is Zimon Dai, A front-end engineer. This blog is about my random thoughts about CS/Programming.</header>
+  <ul class='toc'>
+  <% page.posts.each(function(post){ %>
+    <li>
+      <a href="<%- url_for(post.path) %>"><%= post.title %></a>
+      <span class='list-post-time'><%= date(post.date, config.date_format) %></span>
+    </li>
+  <% }) %>
+  </ul>
+</section>
