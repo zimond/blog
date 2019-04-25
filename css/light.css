@@ -1,0 +1,44 @@
+html {
+  color: #44475a;
+}
+a {
+  color: #6272a4;
+}
+a:hover {
+  background-color: #ff79c6;
+  color: #fff;
+}
+h2,
+h1,
+h3,
+h4 {
+  color: #282a36;
+}
+h4 a {
+  border-color: #ff79c6;
+}
+figure .gutter {
+  color: #ff79c6;
+  background-color: #eee;
+}
+figure .code {
+  background-color: #f8f8f2;
+}
+figure .keyword {
+  color: #ff79c6;
+}
+figure .comment {
+  color: #aaa;
+}
+figure .built-in {
+  color: #bd93f9;
+}
+figure .title {
+  color: #000;
+}
+figure .function .title {
+  color: #bd93f9;
+}
+code {
+  color: #7e4fc2;
+}

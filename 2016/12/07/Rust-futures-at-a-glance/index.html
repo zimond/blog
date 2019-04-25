@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+  <head><meta name="generator" content="Hexo 3.8.0">
+    <meta charset="utf-8">
+    <title>Zimon Dai&#39;s Random Thoughts</title>
+  </head>
+  <body>
+    <div class="container">
+      <section id="main">
+  <div class="page-title">Rust futures at a glance</div>
+  <header>Posted at 2016-12-07, tagged as: 
+    
+      <a class="article-tag-link-link" href="/blog/tags/Rust/">Rust</a>
+    .
+    <a href="/blog">Go Back</a>
+  </header>
+  <div class="post-detail">
+    <p>Recently I am working on a project involving a server which is both CPU and I/O heavy.As a developer with a Node.js background, I realized that Node.js is not doing well in a CPU-heavy situation. And that’s why I switched to Rust. I had no doubt about Rust’s well played lifetime &amp; borrow design and the ability to easily ship parallel code to accomplish CPU-heavy jobs. But it’s the I/O handling that remains a problem.</p>
+<p>Rust’s standard library has a <a href="https://doc.rust-lang.org/std/net/struct.TcpStream.html" target="_blank" rel="noopener">TcpStream</a> which is sync. It’s known that sync I/O operations could be a huge drawback of program performace as the thread has to wait for I/O to finish. Currently guys in the Rust community are working hard on a solution of this based on <a href="https://github.com/carllerche/mio" target="_blank" rel="noopener">mio</a>.</p>
+<p>Before all of this, here’s some background knowledge about async I/O.</p>
+<h2 id="Async-IO"><a href="#Async-IO" class="headerlink" title="Async IO"></a>Async IO</h2><p>There’re two async IO models: the completion model and the readiness model.</p>
+<p>The completion model is quite straightforward. The program provides a buffer to the kernel and schedules a <em>callback</em>. The kernel will eventually fill the buffer with async-got data and call the callback with the data.</p>
+<p>The problem of this model is that it involves many allocations, also quickly becomes too complicated especially when composing async jobs. The situation is quite similar to Node.js’s <a href="http://stackabuse.com/avoiding-callback-hell-in-node-js/" target="_blank" rel="noopener">callback hell</a>.</p>
+<p>The readiness model is more passive. The program polls a socket, and gets an <code>EWOULDBLOCK</code> error if it is not ready. The kernel(<code>epoll</code>, in fact) will register the program for further notification once the socket is ready, and <em>waits</em> for state changes of the socket. When notified, the program could poll again and get the data.</p>
+<p>So in the readiness model, an <em>event loop</em> must be introduced to continuously call <code>epoll_wait</code> to get socket fd changes. <code>Mio</code> is such a library in Rust.</p>
+<blockquote>
+<p>Note that even though Node.js’s standard APIs are in a callback favor, it is <strong>NOT</strong> using the completion model. Node.js is based on <code>libuv</code>, which is a successor of <code>libev</code>, the well-known event loop implementation</p>
+</blockquote>
+<p>Further readings for this section:</p>
+<ol>
+<li><a href="http://hermanradtke.com/2015/07/12/my-basic-understanding-of-mio-and-async-io.html" target="_blank" rel="noopener">My Basic Understanding of mio and Asynchronous IO</a></li>
+<li><a href="http://man7.org/linux/man-pages/man7/epoll.7.html" target="_blank" rel="noopener">Epoll</a></li>
+</ol>
+<h2 id="Futures-in-Rust"><a href="#Futures-in-Rust" class="headerlink" title="Futures in Rust"></a>Futures in Rust</h2><p>So assume that we already have the low-level event-loop layer. How to define and construct an async task? In Node.js we have <em>Promise</em>. A <em>promise</em> is a special object with a <code>.then()</code> API. The promise model has two major drawbacks:</p>
+<p>It could not be scheduled. The promise is sent to the event loop and executed as soon as created. And it could not be canceled.</p>
+<p><a href="http://aturon.github.io/blog/" target="_blank" rel="noopener">Aturon</a> takes a clever design named as <a href="https://github.com/alexcrichton/futures-rs/" target="_blank" rel="noopener">futures-rs</a> to solve the problems. The <code>Future</code> trait is like this:</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">trait</span> <span class="title">Future</span></span> &#123;</span><br><span class="line">  <span class="class"><span class="keyword">type</span> <span class="title">Item</span></span>;</span><br><span class="line">  <span class="class"><span class="keyword">type</span> <span class="title">Error</span></span>;</span><br><span class="line">  <span class="function"><span class="keyword">fn</span> <span class="title">poll</span></span>(&amp;<span class="keyword">mut</span> <span class="keyword">self</span>) -&gt; <span class="built_in">Result</span>&lt;Async&lt;Self::Item&gt;, Self::Error&gt;;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>A <em>Future</em> acts as a node in a large state machine. Each time polled, the <code>.poll()</code> API tells which state to go to. If the future is ready to be resolved, it returns <code>Async::Ready(data)</code> with the <em>data</em> resolved. If not, <code>Async::NotReady</code> is returned to indicate that it should be polled later.</p>
+<p>To cancel a future, an event loop could simply stop polling the future any more, which could be achieved by simply <code>drop</code> the future instance. Also as a future is a state machine, it will not move to any state without polling.</p>
+<blockquote>
+<p>Note that <code>futures-rs</code> is an abstract layer of design pattern. It is not bound to any real async library (like mio) or event loop implementation(like tokio-core).</p>
+</blockquote>
+<h2 id="Run-a-Future"><a href="#Run-a-Future" class="headerlink" title="Run a Future"></a>Run a Future</h2><p>We now have a Future instance, but who should poll the future? <code>Task</code> is introduced as the execution unit of a future. the <code>.wait</code> (blocking current thread) and <code>.spawn</code> (dispatch the future to a thread) APIs are used to create tasks to execute the future passed in.</p>
+<p>When a future returns <code>NotReady</code>, the task is halted to wait for some event to resume. When running many <em>tasks</em>, you have to decide which task to run on which worker thread. When an event occurs, you have to decide which task to wake up. So clearly there’s need for another layer to handle all of this, connect the futures model to the actual async world. This is where <a href="https://github.com/tokio-rs/tokio-core" target="_blank" rel="noopener">tokio-core</a> kicks in. Tokio-core acts as an event loop (based on mio’s event loop) to poll <code>fd</code>s, get the events and schedule tasks.</p>
+<p>So now let’s go back to the task. When a future is <code>NotReady</code>, the task halts. How?</p>
+<p>There is an API <a href="https://docs.rs/futures/0.1.6/futures/task/fn.park.html" target="_blank" rel="noopener">.park()</a>, which should be called in a future’s <code>.poll()</code> function. It acts like <code>thread::park</code> and halts the task at the point called. This API returns a <em>handle</em> to the caller to resume the task at a proper time later. A halted task will not block current thread (aka the tokio-core event loop), which allows the event loop to schedule another task to keep it busy.</p>
+<p>Further readings for this section:</p>
+<ul>
+<li><a href="http://aturon.github.io/blog/2016/09/07/futures-design/" target="_blank" rel="noopener">Design futures for Rust</a></li>
+<li><a href="http://aturon.github.io/blog/2016/08/11/futures/" target="_blank" rel="noopener">Zero cost futures in Rust</a></li>
+</ul>
+<h2 id="Custom-Future-Myth"><a href="#Custom-Future-Myth" class="headerlink" title="Custom Future Myth"></a>Custom Future Myth</h2><p>Say we have a <code>TcpStream</code> and want to read 10 lines from it. It’s easy to come up with a custom Future like <code>TenTimesReadFuture</code>.</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">TenTimesReadFuture</span></span> &#123;</span><br><span class="line">  buffer: <span class="built_in">Vec</span>&lt;<span class="built_in">u8</span>&gt;,</span><br><span class="line">  line_count: <span class="built_in">u8</span>,</span><br><span class="line">  stream: TcpStream</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">impl</span> Future <span class="keyword">for</span> TenTimesReadFuture &#123;</span><br><span class="line">  <span class="comment">// omitted</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>In the <code>.poll()</code> method, read a line from the stream and store it to <code>buffer</code> and check the <code>line_count</code>. If it reaches 10 lines, resolve the future with the buffer.</p>
+<p>But this will not work and <code>.poll()</code> will be called only once. That’s because behind tokio-core, <code>mio</code>‘s event loop is using the <em>edge triggering model</em>. In the event loop, when a resource’s ready, the registered callback (the task) is only notified <em>once</em>. So you have to process all the bytes once the socket is ready and <code>.poll()</code> is called.</p>
+<p>If you do need to wait for something like operations in a worker thread, you have to use the <code>park/unpark</code> API to pause the poll and resume it later on.</p>
+<h2 id="Tokio-core"><a href="#Tokio-core" class="headerlink" title="Tokio-core"></a>Tokio-core</h2><p>Till now it’s quite clear that the event loop is quite important for all of this to actually work. Tokio-core is such a crate.</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">let</span> core = tokio_core::reactor::Core::new();</span><br><span class="line"><span class="keyword">let</span> lp = core.handle();</span><br><span class="line"><span class="comment">// move the handle around</span></span><br><span class="line">core.run(a_future).unwrap();</span><br></pre></td></tr></table></figure>
+<p><code>.run</code> will <strong>block</strong> current thread to poll a future to end. It will be super inconvenient to call this API every time. A proper way is to obtain a <code>Handle</code> of the loop via <code>core.handle()</code>. You could move the handle around, cheap clone it to various structs. Later on, call <code>handle.spawn()</code> to spawn a future to the event loop.</p>
+<p>Even though Futures-rs is ready for multi-thread use, tokio’s core is single-threaded. It’s clearer to keep the event loop on a single thread and leave the multi-thread thing to the user. There’s <code>futures-cpupool</code> to spread cpu-heavy jobs to a thread pool. You could also use <code>core.remote()</code> to get a remote handle, which is <code>Send</code> and could be used in another thread.</p>
+<p>Normally in a multi-threaded server, it’s better to spawn several threads and run an event loop on each. You could reuse the TCP port through the threads. It allows the kernel to dispatch different incoming sockets among the worker threads.</p>
+<p>Tokio-core wraps mio’s APIs and serves the <code>net</code> module with async TCP/UDP bindings. In the 0.1.0 release, there’s <code>io</code> module with some convenient methods for manipulating the streams.</p>
+<p>For most users, working directly with tokio-core is still too low-level. So there’s another abstraction layer to sculpture a common workflow. It is <a href="https://github.com/tokio-rs/tokio-proto" target="_blank" rel="noopener">Tokio-proto</a> which is usually used together with <a href="https://github.com/tokio-rs/tokio-service" target="_blank" rel="noopener">Tokio-service</a>. But that’s too much for this article.</p>
+<p>For HTTP users, hyper’s tokio branch is based on tokio-proto/futures stack, so you have to wait for some time until everything settled down.</p>
+<h2 id="Futures-in-practice-How-to-return-a-future"><a href="#Futures-in-practice-How-to-return-a-future" class="headerlink" title="Futures in practice: How to return a future?"></a>Futures in practice: How to return a future?</h2><p>Now it’s time to put all of this stuff into practice. When actually using futures to write a project, a critical problem will soon hit you: What’s the correct way to return a <code>Future</code>?</p>
+<p>Aturon has a nice <a href="https://github.com/alexcrichton/futures-rs/blob/master/TUTORIAL.md" target="_blank" rel="noopener">tutorial</a> about the baby steps of using futures. I urge everyone to read it before using the futures pattern. In the tutorial, he mentions that there are several ways to return a future:</p>
+<ul>
+<li>Box wrapping the future</li>
+<li>Use a custom struct to wrap the future</li>
+<li>Directly return the type</li>
+<li>return <code>impl trait</code></li>
+</ul>
+<p>In my opinion, the forth option is the one and only elegant way to go. Directly returning the type is nearly impossible when you are chaning futures (that’s when the type could be really <em>HUGE</em>). Using a custom struct also requires you to declare the type of the future in the struct. So the same problem occurs again.</p>
+<p>Box wrapping seems to be a good approach. In fact it’s really easy for a newbie like me to use the <code>.boxed()</code> API on futures and return <code>BoxFuture</code> here and there. But given a second thought, the API should <em>not</em> be used. <code>.boxed()</code> requires a <code>Send + &#39;static</code> bound, which is not needed in most cases, especially when most projects are using <code>tokio-core</code> which is single-threaded. If you do need to return a boxed future, it’d better to create your own boxed type without the <code>Send</code> bound.</p>
+<p>That’s not the biggest problem, however. A <code>Box</code> in rust always means runtime overhead. THe compiler could not know the type statically. In fact in this scenario we DO know the returned type, just not bothered to write it down.</p>
+<p>Use the latest <a href="https://github.com/rust-lang/rfcs/blob/master/text/1522-conservative-impl-trait.md" target="_blank" rel="noopener">impl trait</a> signature seems to be the best way. It is super clear and still is statically analyzed down to a specific type. Just return <code>impl Future&lt;Item=T, Error=E&gt;</code> and you are good to go.</p>
+<blockquote>
+<p>A common myth is that <code>impl trait</code> is similar to that it is in OO languages. In fact it is <strong>NOT</strong>. You could not return any of the trait implementations, only <strong>ONE</strong> of them. It’s just a grammar sugar, and that’s the base of why it do not aquire any runtime overhead.</p>
+</blockquote>
+<p><strong>Note A:</strong></p>
+<p>A common scenario is that you need to return one of several futures based on a condition.</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> condition &#123;</span><br><span class="line">  future_a</span><br><span class="line">&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">  future_b</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>It’s not so obvious that you could always chain futures to combine these futures into one.</p>
+<p>An enum type <code>Either</code> is <a href="https://github.com/alexcrichton/futures-rs/pull/271" target="_blank" rel="noopener">merged</a> and landed in futures-rs 0.1.7 to solve this problem.</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> condition &#123;</span><br><span class="line">  Either::A(a)</span><br><span class="line">&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    Either::B(b)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>And now you could return the one and only Future implementation without breaking the rules.</p>
+<p><strong>Note B:</strong></p>
+<p>When using <code>impl Future</code>, a common situation is that the compiler would complain about “only named lifetimes are allowed in impl trait”. This is to be because of your method has an anoymouse lifetime. Use the following pattern:</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">fn</span> <span class="title">some_method</span></span>&lt;<span class="symbol">'a</span>&gt;(arg: SomeArgument) -&gt; <span class="keyword">impl</span> Future&lt;Item=(), Error=()&gt; + <span class="symbol">'a</span> &#123;</span><br><span class="line">  <span class="comment">// omitted</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="Conclusion"><a href="#Conclusion" class="headerlink" title="Conclusion"></a>Conclusion</h2><p>Mio and Futures is the rusty answer of the async problem. It is carefully crafted and come with a elegant design. Though it could be hard to learn about the concepts and the patterns, it is really a neat piece of library/stack to use.</p>
+
+  </div>
+</section>
+    </div>
+    <footer class="footer">
+  <div class="theme-changer">
+    You are currently using the <span id="theme-indicator">light</span> theme, <a id="theme-change-button">[change]</a>. The color scheme is from the <a href="https://github.com/dracula/dracula-theme" target="_blank">[dracula theme]</a>
+    <p>Suscribe this blog, click <a href="/blog/atom.xml">here</a></p>
+  </div>
+  <link rel="stylesheet" href="/blog/css/style.css">
+  <script src="/blog/js/script.js"></script>
+  <link rel="stylesheet" href="/blog/css/fira.css">
+</footer>
+  </body>
+</html>
