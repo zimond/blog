@@ -17,4 +17,4 @@ Enough intro, back to the talk. It's about some problems I encountered when maki
 - Use _specialization_ for different codecs
 - The tick based design in UPS
 
-{% pdf /blog/files/distributed_actor_system_in_rust.pdf %}
+{% pdf /blog/distributed_actor_system_in_rust.pdf %}
