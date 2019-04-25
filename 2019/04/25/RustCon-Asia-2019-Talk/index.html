@@ -13,10 +13,10 @@
     <a href="/blog">Go Back</a>
   </header>
   <div class="post-detail">
-    <p>On April 20th, I was invited to give a talk on <em>RustCon Asia 2019</em>, a fantastic<br>local event held by <em>Pingcap</em> and <em>Cryptape</em>.</p>
-<p>The talk is about a distributed actor system I have been developing and using for<br>nearly half a year, codenamed as <em>UPS</em>. We know that <code>actix</code> is the most famous<br>and successful actor system in Rust ecosystem. UPS is different as it is a<br>distribution-first solution. It picks fast codes for message se/de, integrates<br>with <code>tokio</code> for networking. For each runtime worker, the actors are stored as<br>plain objects, following the <a href="https://en.wikipedia.org/wiki/Entity_component_system" target="_blank" rel="noopener">ECS pattern</a>,<br>which means UPS allows more than one actor per-type.</p>
-<p>UPS is developed for large work loads, distributed and streaming computation. I<br>am planning to opensource this crate this year, under the name of my company,<br><em>Alibaba inc.</em></p>
-<p>Enough intro, back to the talk. It’s about some problems I encountered when<br>making this crate. Specifically, the talk is about 3 problems:</p>
+    <p>On April 20th, I was invited to give a talk on <em>RustCon Asia 2019</em>, a fantastic local event held by <em>Pingcap</em> and <em>Cryptape</em>.</p>
+<p>The talk is about a distributed actor system I have been developing and using for nearly half a year, codenamed as <em>UPS</em>. We know that <code>actix</code> is the most famous and successful actor system in Rust ecosystem. UPS is different as it is a distribution-first solution. It picks fast codes for message se/de, integrates with <code>tokio</code> for networking. For each runtime worker, the actors are stored as plain objects, following the <a href="https://en.wikipedia.org/wiki/Entity_component_system" target="_blank" rel="noopener">ECS pattern</a>, which means UPS allows more than one actor per-type.</p>
+<p>UPS is developed for large work loads, distributed and streaming computation. I am planning to opensource this crate this year, under the name of my company, <em>Alibaba inc.</em></p>
+<p>Enough intro, back to the talk. It’s about some problems I encountered when making this crate. Specifically, the talk is about 3 problems:</p>
 <ul>
 <li>Get compilation-stable <code>TypeId</code>, quite hacky</li>
 <li>Use <em>specialization</em> for different codecs</li>
@@ -25,7 +25,7 @@
 
 
 	<div class="row">
-    <embed src="/files/distributed_actor_system_in_rust.pdf" width="100%" height="550" type="application/pdf">
+    <embed src="/blog/distributed_actor_system_in_rust.pdf" width="100%" height="550" type="application/pdf">
 	</div>
 
 
